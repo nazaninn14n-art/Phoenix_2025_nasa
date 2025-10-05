@@ -56,22 +56,22 @@ Tech Stack
 
 ---
 
-## 📂 Project Structure
+📂 Project Structure
+├── 1.png                          # Example/sample image  
+├── asdfg.py                       # Flask app for assembling PNG frames into GIF timelapses  
+├── chatbot.py                     # Flask app for chatbot (OpenAI API integration)  
+├── Untitled-1 (2).html            # Main HTML front-end (can be renamed to index.html)  
+├── frames/                        # Processed PNG frames (aligned Terra satellite maps)  
+├── Video_Generator_Model/         # AI video generator (Diffusion models + UI)  
+│   ├── Video_Generator_Model.py   # Flask app for AI video generation  
+│   ├── templates/                 # Front-end templates for video generator  
+│   └── static/                    # Static assets (CSS, JS, images)  
+├── app/                           # Rainfall prediction web app  
+│   ├── templates/                 # Front-end templates for rainfall prediction  
+│   ├── static/                    # Static assets (CSS, JS)  
+│   └── app.py                     # Flask app for rainfall prediction (ML model)  
+└── README.md                      # Project documentation  
 
-├── 1.png                            # Example/sample image
-├── asdfg.py                         # Flask app for assembling PNG frames into GIF timelapses 
-├── chatbot.py                       # Flask app for chatbot (OpenAI API integration) 
-├── Untitled-1 (2).html              # Main HTML front-end (can be renamed to index.html)
-├── frames/                          # Processed PNG frames (aligned Terra satellite maps) 
-├── Video_Generator_Model/           # AI video generator (Diffusion models + UI) 
-│ ├──Video_Generator_Model.py
-│ ├── templates                      # Front-end template for video generator
-│ └── static/                        # Static assets (CSS, JS, images) 
-├── app/                             # Rainfall prediction web app 
-│ ├── templates.html                  # Front-end template for rainfall prediction 
-│ ├── static/                        # Static assets (CSS, JS)
-│ └── app.py                         # Flask app for rainfall prediction (ML model)
----
 
   Usage
  1. Clone repository
