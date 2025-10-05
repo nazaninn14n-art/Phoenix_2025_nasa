@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TerraQuest: Central Valley Precipitation</title>
+  <meta name="description" content="Central Valley precipitation overlay (DAYMET monthly frames) on a static basemap with year/month timeline 2000–2024." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+/* ============ Map toolbar: Navy theme + clean layout ============ */
+.map-toolbar{
+  position: sticky; top: 12px; z-index: 40;
+  max-width: 1024px; margin: 0 auto 14px;
+  display: grid; grid-template-columns: 1fr auto; gap: 12px;
+  background: radial-gradient(120% 140% at 8% 0%, rgba(34,197,94,.10) 0%, #0b1322 45%, #0a1220 100%);
+  border: 1px solid rgba(34,197,94,.30);
+  border-radius: 16px;
+  padding: 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 22px rgba(34,197,94,.14);
+  color: #e5e7eb;
+}
+.map-toolbar .right{
+  display:flex; gap:14px; align-items:center; padding-left:12px;
+  border-left:1px solid rgba(34,197,94,.22);
+}
+.map-toolbar .btn{
+  padding:8px 14px; border-radius: 12px;
+  border:1px solid rgba(34,197,94,.35);
+  background: rgba(34,197,94,.12); color:#22c55e; font-weight:700;
+  transition: transform .12s ease, box-shadow .2s ease, background .2s ease;
+}
+.map-toolbar .btn:hover{ background: rgba(34,197,94,.22); box-shadow:0 0 10px rgba(34,197,94,.35); transform: translateY(-1px); }
+
+/* ============ Sliders: gradient track + neon thumb + center label ============ */
+.map-toolbar .row{
+  position: relative;
+  display: grid; align-items: center;
+  grid-template-columns: 44px 1fr 0px; /* ستون سوم را صفر کردیم؛ لیبل راست را مطلق می‌کنیم */
+  gap: 10px;
+}
+
+/* لیبل‌های چپ (2000 / Jan / …) */
+.map-toolbar .row > label:first-child{
+  font-size: 13px; color: #cfd7e2; text-align: left;
+}
+
+/* لیبل‌های راست (#yLabel / #mLabel) را وسط نوار نمایش بده */
+#yLabel, #mLabel{
+  position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
+  font-weight: 800; letter-spacing: .2px;
+  color: #22c55e; text-shadow: 0 0 10px rgba(34,197,94,.45);
+  pointer-events: none;  /* کلیک‌پذیری از اسلایدر گرفته نشود */
+}
+
+/* خود اسلایدر */
+.map-toolbar input[type="range"]{
+  -webkit-appearance: none; appearance: none; width: 100%;
+  height: 10px; border-radius: 999px; outline: none; cursor: pointer;
+  background: linear-gradient(90deg,#22c55e 0%, #f59e0b 50%, #ef4444 100%); /* سبز→زرد→قرمز */
+  box-shadow: inset 0 0 6px rgba(0,0,0,.55);
+}
+
+/* اگر ماه را رنگ دیگری می‌خواهی، این گرادیان آبی-بنفش فعال است */
+.map-toolbar .row:nth-of-type(2) input[type="range"]{
+  background: linear-gradient(90deg,#3b82f6 0%, #6366f1 50%, #a855f7 100%);
+}
+
+/* WebKit thumb */
+.map-toolbar input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+  background: #22c55e; border: none;
+  box-shadow: 0 0 0 5px rgba(34,197,94,.18), 0 0 18px rgba(34,197,94,.55);
+  transition: transform .08s ease;
+}
+.map-toolbar input[type="range"]:active::-webkit-slider-thumb{ transform: scale(1.06); }
+
+/* Firefox thumb/track */
+.map-toolbar input[type="range"]::-moz-range-track{
+  height: 10px; border-radius: 999px; background: transparent;
+}
+.map-toolbar input[type="range"]::-moz-range-thumb{
+  width: 22px; height: 22px; border-radius: 50%; border: none; background:#22c55e;
+  box-shadow: 0 0 0 5px rgba(34,197,94,.18), 0 0 18px rgba(34,197,94,.55);
+}
+
+/* موبایل: ستون Play بیاید زیر اسلایدرها */
+@media (max-width: 1024px){
+  .map-toolbar{ grid-template-columns: 1fr; }
+  .map-toolbar .right{
+    border-left: none; border-top: 1px solid rgba(34,197,94,.22);
+    padding-left: 0; padding-top: 10px; justify-content: flex-start;
+  }
+}
+
+/* ===== Timeline skin (no HTML changes needed) ===== */
+
+/* خود کارت تایم‌لاین (glow-card ای که داخلش #timelineSteps هست) */
+.glow-card:has(#timelineSteps){
+  background: radial-gradient(120% 120% at 10% 10%, rgba(34,197,94,.10) 0%, rgba(15,23,42,.82) 40%, rgba(15,23,42,.86) 100%);
+  border: 1px solid rgba(34,197,94,.35);
+  box-shadow:
+    0 0 22px rgba(34,197,94,.18),
+    inset 0 0 14px rgba(34,197,94,.10);
+}
+
+/* ظرف مراحل + خط عمودی تایم‌لاین */
+#timelineSteps{
+  position: relative;
+  padding-left: 18px; /* جا برای خط عمودی */
+}
+#timelineSteps::before{
+  content:"";
+  position:absolute; left: 20px; top: 0; bottom: 0; width: 2px;
+  background: linear-gradient(180deg,#10b981,#16a34a,#22c55e);
+  box-shadow: 0 0 12px rgba(34,197,94,.55), 0 0 2px rgba(34,197,94,.9);
+  opacity:.9;
+}
+
+/* هر آیتم مرحله */
+.stepper-item{
+  position: relative;
+  margin-left: 14px;              /* هم‌راستا با خط عمودی */
+  padding: 16px 16px 16px 56px;   /* جا برای آیکون */
+  background: rgba(11,17,28,.55);
+  border: 1px solid rgba(34,197,94,.18);
+  border-radius: 16px;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
+}
+.stepper-item + .stepper-item{ margin-top: 12px; }
+
+.stepper-item:hover{
+  transform: translateX(2px);
+  border-color: rgba(34,197,94,.55);
+  box-shadow: 0 0 16px rgba(34,197,94,.22);
+  background: rgba(15,23,42,.62);
+}
+
+/* آیکون‌های دایره‌ای کنار هر مرحله */
+.stepper-icon{
+  left: -6px; top: 18px;
+  width: 28px; height: 28px;
+  background: rgba(7,12,20,.95);
+  border: 2px solid rgba(34,197,94,.40);
+  box-shadow: 0 0 6px rgba(34,197,94,.25);
+}
+
+/* وضعیت فعال (aria-current="step") */
+.stepper-item[aria-current="step"]{
+  background: rgba(34,197,94,.08);
+  border-color: #22c55e;
+  box-shadow:
+    inset 0 0 20px rgba(34,197,94,.20),
+    0 0 18px rgba(34,197,94,.22);
+}
+.stepper-item[aria-current="step"] .stepper-icon{
+  border-color: #22c55e;
+  box-shadow: 0 0 12px rgba(34,197,94,.55);
+}
+.stepper-item[aria-current="step"]::before{
+  content:""; position:absolute; left: -1px; top: 22px;
+  width: 8px; height: 8px; border-radius: 999px; background:#22c55e;
+  box-shadow: 0 0 12px rgba(34,197,94,.85);
+}
+
+/* تایپوگرافی داخل آیتم‌ها */
+#timelineSteps h4{ color:#e8fff2; font-weight:700; letter-spacing:.2px; }
+#timelineSteps p{ color:#a7cab8; }
+
+/* حالت غیرفعال/Disabled (Future) */
+.stepper-item[aria-disabled="true"]{
+  opacity:.55; filter:saturate(.6);
+  cursor: not-allowed;
+}
+/* ===== Map Control Toolbar Skin ===== */
+.map-toolbar{
+  position: sticky; top: 12px; z-index: 40;
+  max-width: 1024px; margin: 0 auto 14px;
+  display: grid; grid-template-columns: 1fr auto; gap: 12px;
+
+  /* مثل glow-card های بقیه */
+  background: rgba(15,23,42,.82);
+  border: 1px solid rgba(34,197,94,.28);
+  border-radius: 16px;
+  padding: 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 22px rgba(34,197,94,.15);
+  color:#e5e7eb;
+}
+.map-toolbar .left{display:grid; gap:10px}
+.map-toolbar .row{
+  display:grid; grid-template-columns: 40px 1fr 60px; align-items:center; gap:8px;
+}
+.map-toolbar .row label{font-size:13px; color:#9ca3af; text-align:center}
+
+/* اسلایدرها */
+.map-toolbar input[type="range"]{
+  accent-color:#22c55e;
+  height: 4px;
+  border-radius: 6px;
+}
+
+/* بخش سمت راست */
+.map-toolbar .right{
+  display:flex; gap:14px; align-items:center; padding-left: 12px;
+  border-left:1px solid rgba(34,197,94,.25);
+}
+.map-toolbar .btn{
+  padding:8px 14px;
+  border-radius:10px;
+  border:1px solid rgba(34,197,94,.35);
+  background: rgba(34,197,94,.15);
+  color:#22c55e;
+  font-weight:600;
+  cursor:pointer;
+  transition:all .2s ease;
+}
+.map-toolbar .btn:hover{
+  background: rgba(34,197,94,.25);
+  box-shadow:0 0 10px rgba(34,197,94,.35);
+}
+.map-toolbar .opacity{display:flex; align-items:center; gap:8px}
+.map-toolbar .opacity span{min-width:38px; text-align:right; font-variant-numeric: tabular-nums}
+
+/* موبایل */
+@media (max-width: 1024px){
+  .map-toolbar{grid-template-columns: 1fr}
+  .map-toolbar .right{
+    border-left:none; border-top:1px solid rgba(34,197,94,.25);
+    padding-left:0; padding-top:10px;
+    justify-content:flex-start;
+  }
+}
+
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap');
+    /* === Compact map toolbar (sticky) === */
+.map-toolbar{
+  position: sticky; top: 84px; z-index: 40;
+  max-width: 1024px; margin: 0 auto 14px;
+  display: grid; grid-template-columns: 1fr auto; gap: 12px;
+  background: rgba(255,255,255,.85); color:#111;
+  border:1px solid #e5e7eb; border-radius: 12px;
+  padding: 12px; backdrop-filter: saturate(140%) blur(6px);
+}
+.map-toolbar .left{display:grid; gap:8px}
+.map-toolbar .row{display:grid; grid-template-columns: 36px 1fr 48px; align-items:center; gap:8px}
+.map-toolbar .row label{font-size:12px; color:#374151; text-align:center}
+.map-toolbar input[type="range"]{accent-color:#0ea5e9; width:100%}
+.map-toolbar .right{
+  display:flex; gap:10px; align-items:center; padding-left: 6px;
+  border-left:1px solid #e5e7eb;
+}
+.map-toolbar .btn{padding:8px 12px; border-radius:10px; border:1px solid #e5e7eb; background:white; cursor:pointer}
+.map-toolbar .btn:is(:hover,:focus){box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.map-toolbar .opacity{display:flex; align-items:center; gap:8px}
+.map-toolbar .opacity span{min-width:38px; text-align:right; font-variant-numeric: tabular-nums}
+
+/* موبایل: راست‌چین عمودی می‌شود */
+@media (max-width: 1024px){
+  .map-toolbar{grid-template-columns: 1fr}
+  .map-toolbar .right{border-left:none; border-top:1px solid #e5e7eb; padding-left:0; padding-top:10px; justify-content:space-between}
+}
+
+/* فرم کنترل قدیمی را مخفی کن */
+.map-ui{ display:none !important; }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { font-family: 'Exo 2', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #0a0a0f; color: #fff; overflow-x: hidden; }
+    .orbitron { font-family: 'Orbitron', monospace; }
+
+    /* Animated space background (respect reduced motion) */
+    .space-bg { background: radial-gradient(ellipse at center, #1a1a2e 0%, #16213e 35%, #0a0a0f 100%); position: relative; }
+    .stars { position: fixed; inset: 0; pointer-events: none; background-image:
+        radial-gradient(2px 2px at 20px 30px, #eee, transparent),
+        radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,.8), transparent),
+        radial-gradient(1px 1px at 90px 40px, #fff, transparent),
+        radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,.6), transparent);
+      background-repeat: repeat; background-size: 200px 100px; animation: sparkle 20s linear infinite; opacity: .35; }
+    @keyframes sparkle { from { transform: translateX(0); } to { transform: translateX(-200px); } }
+    @media (prefers-reduced-motion: reduce) { .stars { animation: none; } }
+
+    /* Globe */
+    .earth { width: clamp(220px, 32vw, 320px); aspect-ratio: 1/1; border-radius: 999px; background:
+        linear-gradient(45deg, #1e40af, #059669 40%, #f59e0b 60%, #dc2626);
+      position: relative; box-shadow: 0 0 60px rgba(34, 197, 94, 0.35); animation: rotate 30s linear infinite; }
+    @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .earth { animation: none; } }
+
+    /* Orbiting satellite */
+    .satellite { position: absolute; top: -60px; left: 50%; transform: translateX(-50%); animation: orbit 15s linear infinite; }
+    @keyframes orbit {
+      from { transform: translateX(-50%) rotate(0deg) translateX(200px) rotate(0deg); }
+      to   { transform: translateX(-50%) rotate(360deg) translateX(200px) rotate(-360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) { .satellite { animation: none; top: 0; left: 0; transform: none; } }
+
+    /* Cards */
+    .glow-card { background: rgba(15, 23, 42, 0.82); border: 1px solid rgba(34, 197, 94, 0.28); backdrop-filter: blur(10px); transition: all .25s ease; }
+    .glow-card:hover { border-color: rgba(34, 197, 94, 0.8); box-shadow: 0 0 26px rgba(34, 197, 94, 0.28); transform: translateY(-3px); }
+
+    .neon-green { color:#22c55e; text-shadow: 0 0 10px rgba(34,197,94,.5); }
+    .neon-orange{ color:#f97316; text-shadow: 0 0 10px rgba(249,115,22,.5); }
+    .neon-blue  { color:#3b82f6; text-shadow: 0 0 10px rgba(59,130,246,.5); }
+
+    /* Stepper */
+    .stepper-item { position: relative; padding: 18px 16px 18px 40px; border-left: 2px solid rgba(34, 197, 94, 0.3); cursor: pointer; border-radius: 8px; }
+    .stepper-item[aria-current="step"] { border-left-color: #22c55e; background: rgba(34,197,94,0.06); }
+    .stepper-icon { position: absolute; left: -15px; top: 16px; width: 30px; height: 30px; border-radius: 999px; background: rgba(15,23,42,.9); border: 2px solid rgba(34,197,94,.3); display: grid; place-content: center; transition: all .2s ease; }
+    .stepper-item[aria-current="step"] .stepper-icon { border-color: #22c55e; box-shadow: 0 0 18px rgba(34,197,94,.45); }
+
+    /* Chat */
+    .chat-message { background: rgba(15,23,42,.6); border: 1px solid rgba(34,197,94,.22); border-radius: 14px; padding: 14px; margin: 10px 0; backdrop-filter: blur(5px); }
+    .chat-input { background: rgba(15,23,42,.85); border:1px solid rgba(34,197,94,.32); border-radius: 999px; padding: 12px 18px; color:#fff; outline:none; }
+    .chat-input:focus{ border-color:#22c55e; box-shadow: 0 0 14px rgba(34,197,94,.28) }
+
+    .fade-in { animation: fadeIn .45s ease; }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(16px);} to { opacity:1; transform:none; } }
+    @media (prefers-reduced-motion: reduce) { .fade-in { animation: none; } }
+
+    /* Lab */
+    .lab-card { background: rgba(15,23,42,.72); border: 1px solid rgba(34,197,94,.22); border-radius: 16px; padding: 20px; transition: all .2s; position: relative; overflow:hidden; }
+    .lab-card:hover{ border-color: rgba(34,197,94,.6); box-shadow: 0 0 22px rgba(34,197,94,.18); }
+
+    .planck-curve { stroke: #f97316; stroke-width: 2; fill: none; filter: drop-shadow(0 0 5px rgba(249,115,22,.5)); }
+
+    .orbit-path { stroke: #22c55e; stroke-width: 2; fill: none; stroke-dasharray: 6 6; animation: dash 3s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -24; } }
+    @media (prefers-reduced-motion: reduce) { .orbit-path { animation:none; } }
+
+    .spectral-band { height: 30px; margin: 6px 0; border-radius: 16px; position: relative; overflow: hidden; }
+    .band-red{ background: linear-gradient(90deg,#dc2626,#ef4444); }
+    .band-green{ background: linear-gradient(90deg,#16a34a,#22c55e); }
+    .band-blue{ background: linear-gradient(90deg,#2563eb,#3b82f6); }
+    .band-nir{ background: linear-gradient(90deg,#7c3aed,#a855f7); }
+
+    /* Utility */
+    .visually-hidden{ position:absolute !important; height:1px; width:1px; overflow:hidden; clip:rect(1px, 1px, 1px, 1px); white-space:nowrap; }
+
+    /* ===== NEW: Map overlay styles ===== */
+    .map-wrap{position:relative; width:100%; max-width:1024px; aspect-ratio:1/1; margin:auto; border-radius:16px; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,.15);}
+    .map-wrap img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; image-rendering:auto;}
+    .map-basemap{z-index:1;}
+    .map-frame{z-index:2; opacity:.9; mix-blend-mode:multiply;}
+    .map-ui{display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:center; margin:14px auto 28px; max-width:1024px}
+    .map-ui .group{display:flex; align-items:center; gap:8px; padding:6px 10px; background:#f6f7f9; border:1px solid #e5e7eb; border-radius:10px; color:#111;}
+    .map-ui label{font-size:13px; color:#374151}
+    .map-ui select,.map-ui input[type="range"]{accent-color:#0ea5e9}
+    .map-ui button{padding:8px 12px; border-radius:10px; border:1px solid #e5e7eb; background:white; color:#111; cursor:pointer}
+    .map-ui button:is(:hover,:focus){box-shadow:0 2px 8px rgba(0,0,0,.08)}
+    .map-badge{position:absolute; right:10px; bottom:10px; z-index:3; background:rgba(255,255,255,.85); color:#111; backdrop-filter:saturate(140%) blur(6px); padding:6px 10px; border-radius:8px; font:600 12px/1.2 ui-sans-serif,system-ui}
+    .spinner{position:absolute; inset:0; display:grid; place-items:center; z-index:4; background:rgba(255,255,255,.0); pointer-events:none; opacity:0; transition:.2s}
+    .spinner.show{opacity:1}
+    .dot{width:10px;height:10px;border-radius:50%;background:#94a3b8;animation:b .9s infinite alternate}
+    @keyframes b{to{opacity:.2; transform:scale(.7)}}
+    /* ==== FORCE navy theme for the map toolbar ==== */
+.map-toolbar{
+  background: radial-gradient(120% 140% at 8% 0%, rgba(34,197,94,.10) 0%, #0b1322 45%, #0a1220 100%) !important;
+  border: 1px solid rgba(34,197,94,.30) !important;
+  color: #e5e7eb !important;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 22px rgba(34,197,94,.14);
+}
+
+/* Play button هم با تم تیره */
+.map-toolbar .btn{
+  background: rgba(34,197,94,.12) !important;
+  border: 1px solid rgba(34,197,94,.35) !important;
+  color:#22c55e !important;
+}
+.map-toolbar .right{
+  border-left:1px solid rgba(34,197,94,.22) !important;
+}
+
+  </style>
+</head>
+<body class="space-bg">
+  <div class="stars" aria-hidden="true"></div>
+
+  <!-- Nav -->
+  <nav class="fixed top-0 w-full z-50 bg-black/50 backdrop-blur-md border-b border-green-500/30" role="navigation" aria-label="Primary">
+    <div class="mx-auto max-w-7xl px-6 py-4">
+      <div class="flex items-center justify-between gap-3">
+        <h1 class="text-2xl font-bold orbitron neon-green">TerraQuest</h1>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" data-target="home" class="nav-btn px-3 py-2 rounded hover:text-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/60">Home</button>
+          <button type="button" data-target="story" class="nav-btn px-3 py-2 rounded hover:text-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/60">Story</button>
+          <button type="button" data-target="map" class="nav-btn px-3 py-2 rounded hover:text-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/60">Map</button>
+          <button type="button" data-target="chat" class="nav-btn px-3 py-2 rounded hover:text-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/60">Ask Terra</button>
+          <button type="button" data-target="lab" class="nav-btn px-3 py-2 rounded hover:text-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/60">Lab</button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Sections -->
+  <main>
+    <!-- Home -->
+    <section id="home" class="min-h-screen flex items-center justify-center relative pt-24" aria-labelledby="homeTitle">
+      <div class="mx-auto max-w-7xl px-6 text-center">
+        <h2 id="homeTitle" class="visually-hidden">Home</h2>
+        <div class="flex flex-col lg:flex-row items-center justify-center gap-10">
+          <!-- Earth -->
+          <div class="relative">
+            <div class="earth">
+              <div class="satellite" aria-hidden="true">
+                <svg width="40" height="40" viewBox="0 0 40 40" class="neon-green">
+                  <rect x="15" y="18" width="10" height="4" fill="currentColor"/>
+                  <rect x="5" y="15" width="8" height="2" fill="currentColor"/>
+                  <rect x="27" y="15" width="8" height="2" fill="currentColor"/>
+                  <rect x="5" y="23" width="8" height="2" fill="currentColor"/>
+                  <rect x="27" y="23" width="8" height="2" fill="currentColor"/>
+                  <circle cx="20" cy="20" r="3" fill="currentColor"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mission cards -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+            <button class="glow-card rounded-xl p-6 text-left" data-target="story">
+              <div class="text-4xl mb-4">📖</div>
+              <h3 class="text-xl font-bold orbitron neon-green mb-2">Animated Story</h3>
+              <p class="text-gray-300">Experience the drought crisis through interactive storytelling.</p>
+            </button>
+            <button class="glow-card rounded-xl p-6 text-left" data-target="map">
+              <div class="text-4xl mb-4">🗺️</div>
+              <h3 class="text-xl font-bold orbitron neon-orange mb-2">Map Adventure</h3>
+              <p class="text-gray-300">Explore Central Valley rainfall patterns (2000–2024).</p>
+            </button>
+            <button class="glow-card rounded-xl p-6 text-left" data-target="chat">
+              <div class="text-4xl mb-4">🤖</div>
+              <h3 class="text-xl font-bold orbitron neon-blue mb-2">Ask Terra</h3>
+              <p class="text-gray-300">Chat with our AI assistant about climate and conservation.</p>
+            </button>
+            <button class="glow-card rounded-xl p-6 text-left" data-target="lab">
+              <div class="text-4xl mb-4">🔬</div>
+              <h3 class="text-xl font-bold orbitron neon-green mb-2">Behind the Science</h3>
+              <p class="text-gray-300">Discover how satellites monitor our changing planet.</p>
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-12">
+          <h2 class="text-4xl font-bold orbitron neon-green mb-3">Central Valley — Precip</h2>
+          <p class="text-lg md:text-xl text-gray-300 max-w-3xl mx-auto">Monthly precipitation overlays (DAYMET) on a static basemap.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Story -->
+    <section id="story" class="min-h-screen pt-24 px-6 hidden" aria-labelledby="storyTitle">
+      <div class="mx-auto max-w-6xl">
+        <div class="text-center mb-10">
+          <h2 id="storyTitle" class="text-4xl font-bold orbitron neon-green mb-2">The Story of Drought</h2>
+          <p class="text-xl text-gray-300">An interactive journey through climate data</p>
+        </div>
+
+        <article class="glow-card rounded-xl p-8 max-w-4xl mx-auto">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+            <div>
+              <h3 class="text-2xl font-bold neon-orange mb-4">Chapter 1: The Warning Signs</h3>
+              <p class="text-gray-300 mb-6">High above Earth, satellites detect the first signs of change. Vegetation indices drop, land surface temperatures rise, and precipitation patterns shift across the Sahel region.</p>
+              <ul class="space-y-3">
+                <li class="flex items-center gap-3"><span class="w-3 h-3 rounded-full bg-red-500"></span><span class="neon-orange">Rising temperatures detected</span></li>
+                <li class="flex items-center gap-3"><span class="w-3 h-3 rounded-full bg-orange-500"></span><span class="neon-orange">Vegetation stress increasing</span></li>
+                <li class="flex items-center gap-3"><span class="w-3 h-3 rounded-full bg-blue-500"></span><span class="neon-blue">Rainfall patterns changing</span></li>
+              </ul>
+            </div>
+            <div class="glow-card h-64 grid place-items-center rounded-lg">
+              <div class="text-center">
+                <div class="text-6xl mb-4">🛰️</div>
+                <p class="neon-green">Satellite monitoring in progress…</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button type="button" class="glow-card px-6 py-3 rounded-full neon-green font-semibold hover:bg-green-500/20 transition-all" id="continueStory">Continue Story →</button>
+            <small class="text-gray-400">Tip: Use the Map to scrub months/years.</small>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Map -->
+    <section id="map" class="min-h-screen pt-24 px-6 hidden" aria-labelledby="mapTitle">
+      <div class="mx-auto max-w-7xl">
+        <div class="text-center mb-8">
+          <h2 id="mapTitle" class="text-4xl font-bold orbitron neon-green mb-3">Map — Central Valley Rainfall</h2>
+          <p class="text-xl text-gray-300">Basemap + monthly DAYMET overlays (2000–2024)</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-220px)]">
+          <!-- Timeline (narrative only) -->
+          <aside class="lg:col-span-3">
+            <div class="glow-card rounded-xl p-6 h-full">
+              <h3 class="text-xl font-bold orbitron neon-green mb-5">Timeline</h3>
+              <div class="space-y-3" id="timelineSteps">
+                <div class="stepper-item" data-step="past" tabindex="0" role="button" aria-current="step">
+                  <div class="stepper-icon"><span class="text-sm neon-green">📅</span></div>
+                  <div class="ml-2">
+                    <h4 class="font-semibold neon-green">Past</h4>
+                    <p class="text-sm text-gray-400">Historical baseline (2000–2019)</p>
+                  </div>
+                </div>
+                <div class="stepper-item" data-step="present" tabindex="0" role="button">
+                  <div class="stepper-icon"><span class="text-sm">🌍</span></div>
+                  <div class="ml-2">
+                    <h4 class="font-semibold">Present</h4>
+                    <p class="text-sm text-gray-400">Current conditions (2020–2024)</p>
+                  </div>
+                </div>
+                <div class="stepper-item" data-step="impacts" tabindex="0" role="button">
+                  <div class="stepper-icon"><span class="text-sm">⚠️</span></div>
+                  <div class="ml-2">
+                    <h4 class="font-semibold">Impacts</h4>
+                    <p class="text-sm text-gray-400">Human & environmental effects</p>
+                  </div>
+                </div>
+                <div class="stepper-item opacity-50 pointer-events-none" data-step="future" tabindex="-1" role="button" aria-disabled="true" title="Disabled — data to 2024">
+                  <div class="stepper-icon"><span class="text-sm">🔮</span></div>
+                  <div class="ml-2">
+                    <h4 class="font-semibold">Future</h4>
+                    <p class="text-sm text-gray-400">Projections (—)</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Map center (NEW) -->
+          <section class="lg:col-span-6">
+                        <!-- Year & Month Timelines -->
+            <!-- Compact sticky toolbar (replaces old timelines) -->
+            <div class="map-toolbar">
+              <div class="left">
+                <!-- Year -->
+                <div class="row">
+                  <label>2000</label>
+                  <div>
+                    <input id="ySlider" type="range" min="2000" max="2024" value="2000">
+                  </div>
+                  <label id="yLabel" class="text-green-600 font-semibold">Year</label>
+                </div>
+                <!-- Month -->
+                <div class="row">
+                  <label>Jan</label>
+                  <div>
+                    <input id="mSlider" type="range" min="0" max="11" value="0">
+                  </div>
+                  <label id="mLabel" class="text-green-600 font-semibold">Month</label>
+                </div>
+              </div>
+
+              <div class="right">
+                <button id="playBtn" class="btn" aria-pressed="false">▶ Play</button>
+
+              </div>
+            </div>
+
+
+            <div class="glow-card rounded-xl p-6 h-full">
+              <div class="map-wrap" id="cv-map">
+                <img class="map-basemap" src="1.png" alt="Central Valley basemap">
+                <img class="map-frame" id="precipFrame" alt="Monthly precipitation overlay">
+                <div class="spinner" id="loader"><div class="dot"></div></div>
+                <div class="map-badge" id="badge">—</div>
+              </div>
+
+              <div class="map-ui">
+                <div class="group">
+                  <label for="year">Year</label>
+                  <select id="year"></select>
+                </div>
+                <div class="group">
+                  <label for="month">Month</label>
+                  <select id="month">
+                    <option value="0">Jan</option><option value="1">Feb</option><option value="2">Mar</option>
+                    <option value="3">Apr</option><option value="4">May</option><option value="5">Jun</option>
+                    <option value="6">Jul</option><option value="7">Aug</option><option value="8">Sep</option>
+                    <option value="9">Oct</option><option value="10">Nov</option><option value="11">Dec</option>
+                  </select>
+                </div>
+                <div class="group">
+                  <label for="opacity">Opacity</label>
+                  <input id="opacity" type="range" min="30" max="100" value="90">
+                  <span id="opacityVal">90%</span>
+                </div>
+                <button id="playBtn" aria-pressed="false">▶ Play</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Tools -->
+          <aside class="lg:col-span-3">
+            <div class="glow-card rounded-xl p-6 h-full" id="toolsPanel">
+              <h3 class="text-xl font-bold orbitron neon-green mb-5">Tools</h3>
+
+              <div class="mb-6">
+                <h4 class="font-semibold mb-3">Data Layers</h4>
+                <div class="space-y-2" id="layerToggles">
+                  <label class="flex items-center gap-3 cursor-pointer"><input type="radio" name="layer" value="NDVI" class="accent-green-500" /><span class="neon-green">NDVI (Vegetation)</span></label>
+                  <label class="flex items-center gap-3 cursor-pointer"><input type="radio" name="layer" value="LST" class="accent-orange-500" /><span class="neon-orange">LST (Temperature)</span></label>
+                  <label class="flex items-center gap-3 cursor-pointer"><input type="radio" name="layer" value="Precip" checked class="accent-blue-500" /><span class="neon-blue">Precipitation (DAYMET)</span></label>
+                </div>
+              </div>
+                            <!-- GIF Generator (minimal) -->
+              <div class="mt-8 border-t border-green-500/20 pt-6">
+                <h4 class="font-semibold mb-3">🎞️ GIF Generator</h4>
+
+                <div class="space-y-3">
+                  <label class="flex items-center justify-between gap-3">
+                    <span class="text-sm text-gray-300">Start year</span>
+                    <input id="gifStart" type="number" min="2000" max="2025" value="2000"
+                          class="w-32 bg-slate-900 border border-green-500/30 rounded px-2 py-1">
+                  </label>
+
+                  <label class="flex items-center justify-between gap-3">
+                    <span class="text-sm text-gray-300">End year</span>
+                    <input id="gifEnd" type="number" min="2000" max="2025" value="2005"
+                          class="w-32 bg-slate-900 border border-green-500/30 rounded px-2 py-1">
+                  </label>
+
+                  <label class="flex items-center justify-between gap-3">
+                    <span class="text-sm text-gray-300">FPS</span>
+                    <input id="gifFps" type="number" min="1" max="12" value="6"
+                          class="w-32 bg-slate-900 border border-green-500/30 rounded px-2 py-1">
+                  </label>
+
+                  <button id="gifMakeBtn" class="glow-card px-4 py-2 rounded font-semibold">Generate GIF</button>
+
+                  <div id="gifProgress" class="text-xs text-gray-400 hidden">Preparing…</div>
+                  <a id="gifDownload" class="hidden underline text-green-400" download="timelapse.gif">Download GIF</a>
+                </div>
+              </div>
+
+
+
+            </div>
+            
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chat -->
+    <section id="chat" class="min-h-screen pt-24 px-6 hidden" aria-labelledby="chatTitle">
+      <div class="mx-auto max-w-4xl">
+        <div class="text-center mb-8">
+          <h2 id="chatTitle" class="text-4xl font-bold orbitron neon-green mb-2">Ask Terra</h2>
+          <p class="text-xl text-gray-300">Your AI assistant for climate and conservation questions</p>
+        </div>
+
+        <div class="glow-card rounded-xl p-6 h-[calc(100vh-260px)] flex flex-col">
+          <header class="flex items-center gap-4 pb-4 border-b border-green-500/30">
+            <div class="w-12 h-12 rounded-full bg-gradient-to-r from-green-500 to-blue-500 grid place-items-center text-xl">🤖</div>
+            <div>
+              <h3 class="font-bold neon-green">Terra AI</h3>
+              <p class="text-sm text-gray-400">Climate & Satellite Expert</p>
+            </div>
+            <div class="ml-auto"><div class="w-3 h-3 bg-green-500 rounded-full animate-pulse" aria-label="Online"></div></div>
+          </header>
+
+          <div class="flex-1 overflow-y-auto py-4 space-y-4" id="chatMessages" aria-live="polite">
+            <div class="chat-message">
+              <div class="flex items-start gap-3">
+                <div class="w-8 h-8 rounded-full bg-green-500 grid place-items-center text-sm">🤖</div>
+                <div class="flex-1">
+                  <p class="mb-3">Hello! I'm Terra, your AI guide to understanding drought with satellite data. Try the Map tab to browse Central Valley rainfall.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <footer class="pt-4 border-t border-green-500/30">
+            <div class="flex gap-3">
+              <input type="text" id="chatInput" class="chat-input flex-1" placeholder="Ask me about the map or rainfall data…" aria-label="Chat input" />
+              <button id="sendBtn" class="glow-card px-6 py-3 rounded-full neon-green font-semibold hover:bg-green-500/20 transition-all">Send</button>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </section>
+
+    <!-- Lab (unchanged) -->
+    <section id="lab" class="min-h-screen pt-24 px-6 hidden" aria-labelledby="labTitle">
+      <div class="mx-auto max-w-7xl">
+        <div class="text-center mb-10">
+          <h2 id="labTitle" class="text-4xl font-bold orbitron neon-green mb-2">Virtual Laboratory</h2>
+          <p class="text-xl text-gray-300">Explore the science behind satellite Earth observation</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <!-- NDVI card -->
+          <section class="lab-card" aria-labelledby="ndviTitle">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="text-3xl neon-green">🌱</div>
+              <h3 id="ndviTitle" class="text-xl font-bold orbitron neon-green">NDVI — Plant Health</h3>
+            </div>
+            <p class="text-gray-300 mb-4">Normalized Difference Vegetation Index measures how plants reflect light. Healthy vegetation reflects more near-infrared (NIR) light and less red light.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end mb-4">
+              <label class="text-sm">Red reflectance
+                <input id="redInput" type="number" step="0.01" min="0" max="1" value="0.2" class="mt-1 w-full bg-slate-800 border border-slate-600 rounded px-2 py-1" />
+              </label>
+              <label class="text-sm">NIR reflectance
+                <input id="nirInput" type="number" step="0.01" min="0" max="1" value="0.8" class="mt-1 w-full bg-slate-800 border border-slate-600 rounded px-2 py-1" />
+              </label>
+              <button id="ndviCalc" class="glow-card px-4 py-2 rounded font-semibold">Compute NDVI</button>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-sm">NDVI Formula:</span>
+              <code class="text-xs bg-black/40 px-2 py-1 rounded">(NIR − Red) / (NIR + Red)</code>
+            </div>
+            <div class="text-center mt-4">
+              <div id="ndviValue" class="text-2xl neon-green font-bold">NDVI = 0.75</div>
+              <div id="ndviLabel" class="text-sm text-gray-400">Healthy vegetation</div>
+            </div>
+          </section>
+
+          <!-- LST card -->
+          <section class="lab-card" aria-labelledby="lstTitle">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="text-3xl neon-orange">🌡️</div>
+              <h3 id="lstTitle" class="text-xl font-bold orbitron neon-orange">LST — Surface Temperature</h3>
+            </div>
+            <p class="text-gray-300 mb-4">Land Surface Temperature uses thermal infrared radiation (Planck's law). Adjust the slider to see how emission intensity shifts with temperature.</p>
+            <div class="mb-4">
+              <input type="range" min="20" max="60" value="42" class="w-full" id="tempSlider" aria-label="Temperature (°C)" />
+              <div class="flex justify-between text-sm text-gray-400 mt-1">
+                <span>20°C</span><span id="currentTemp" class="neon-orange">42°C</span><span>60°C</span>
+              </div>
+            </div>
+            <svg width="100%" height="120" class="border border-gray-600 rounded" aria-label="Thermal emission curve">
+              <path class="planck-curve" d="M10,100 Q50,60 100,40 Q150,30 200,25 Q250,22 290,20" id="planckPath"/>
+              <text x="50%" y="16" class="text-xs fill-current" text-anchor="middle">Thermal Emission Intensity</text>
+            </svg>
+          </section>
+
+          <!-- Orbit card -->
+          <section class="lab-card" aria-labelledby="orbitTitle">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="text-3xl neon-blue">🛰️</div>
+              <h3 id="orbitTitle" class="text-xl font-bold orbitron neon-blue">Sun-Synchronous Orbit</h3>
+            </div>
+            <p class="text-gray-300 mb-4">A Sun-synchronous orbit crosses the equator at the same local solar time (e.g., 10:30 AM), keeping lighting consistent for imaging.</p>
+            <svg width="100%" height="200" class="border border-gray-600 rounded" role="img" aria-label="Orbit animation">
+              <circle cx="150" cy="100" r="40" fill="#1e40af" opacity="0.85"/>
+              <ellipse cx="150" cy="100" rx="80" ry="60" class="orbit-path"/>
+              <circle cx="230" cy="100" r="4" fill="#22c55e">
+                <animateMotion dur="6s" repeatCount="indefinite">
+                  <path d="M230,100 A80,60 0 1,1 70,100 A80,60 0 1,1 230,100"/>
+                </animateMotion>
+              </circle>
+              <g stroke="#fbbf24" stroke-width="2" opacity="0.6">
+                <line x1="50" y1="50" x2="60" y2="60"/>
+                <line x1="40" y1="70" x2="52" y2="70"/>
+                <line x1="50" y1="90" x2="60" y2="80"/>
+              </g>
+              <text x="150" y="182" class="text-xs fill-current" text-anchor="middle">10:30 AM Local Solar Time</text>
+            </svg>
+          </section>
+
+          <!-- Spectral bands -->
+          <section class="lab-card" aria-labelledby="bandsTitle">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="text-3xl">📷</div>
+              <h3 id="bandsTitle" class="text-xl font-bold orbitron">Spectral Bands</h3>
+            </div>
+            <p class="text-gray-300 mb-4">Satellites use different wavelength bands to reveal different surface properties. Each band acts like a specific filter.</p>
+            <div class="space-y-3">
+              <div class="spectral-band band-red relative"><div class="absolute inset-0 flex items-center justify-between px-4 text-sm font-semibold"><span>Red (0.63–0.69 μm)</span><span>Vegetation absorption</span></div></div>
+              <div class="spectral-band band-green relative"><div class="absolute inset-0 flex items-center justify-between px-4 text-sm font-semibold"><span>Green (0.52–0.60 μm)</span><span>Vegetation reflection</span></div></div>
+              <div class="spectral-band band-blue relative"><div class="absolute inset-0 flex items-center justify-between px-4 text-sm font-semibold"><span>Blue (0.45–0.52 μm)</span><span>Water bodies</span></div></div>
+              <div class="spectral-band band-nir relative"><div class="absolute inset-0 flex items-center justify-between px-4 text-sm font-semibold"><span>Near-IR (0.77–0.90 μm)</span><span>Plant structure</span></div></div>
+            </div>
+            <div class="mt-5">
+              <button id="openPhysics" class="glow-card px-4 py-2 rounded font-semibold">🎬 Open Physics Mini-Explainer</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Physics Modal -->
+  <div id="physicsModal" class="hidden fixed inset-0 z-[70] grid place-items-center p-6 bg-black/70">
+    <div class="w-full max-w-3xl bg-slate-900 border border-green-500/30 rounded-2xl overflow-hidden shadow-2xl">
+      <header class="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+        <h3 class="text-lg font-semibold">Physics & Engineering Behind the Scenes</h3>
+        <button id="closePhysics" class="p-2 hover:bg-white/5 rounded" aria-label="Close">✕</button>
+      </header>
+      <div class="p-6 grid gap-6">
+        <section>
+          <h4 class="font-semibold mb-2">1) Surface Energy Balance (Thermodynamics)</h4>
+          <p class="text-sm text-gray-300 mb-3">Incoming sunlight and outgoing heat must balance with sensible & latent heat fluxes.</p>
+          <div class="glow-card rounded-lg p-4">
+            <canvas id="energyCanvas" width="640" height="140" class="w-full"></canvas>
+            <div class="flex items-center gap-3 mt-3 text-sm">
+              <label class="flex items-center gap-2">Soil Moisture <input id="soilMoisture" type="range" min="0" max="100" value="60" /></label>
+              <span id="latentLabel" class="text-blue-300">Latent ↑</span>
+            </div>
+          </div>
+        </section>
+        <section>
+          <h4 class="font-semibold mb-2">2) Sun-Synchronous Orbit</h4>
+          <p class="text-sm text-gray-300 mb-3">Consistent local time keeps illumination comparable across images.</p>
+        </section>
+        <section>
+          <h4 class="font-semibold mb-2">3) Radiometry & Planck’s Law</h4>
+          <p class="text-sm text-gray-300">Thermal sensors convert radiance to brightness temperature.</p>
+        </section>
+      </div>
+    </div>
+  </div>
+<!-- Impact Modal -->
+<div id="impactModal" class="hidden fixed inset-0 z-[80] grid place-items-center p-6 bg-black/70">
+  <div class="w-full max-w-lg bg-slate-900 border border-green-500/30 rounded-2xl shadow-2xl overflow-hidden">
+    <header class="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+      <h3 class="text-lg font-semibold text-green-400">Impact Analysis</h3>
+      <button id="closeImpact" class="p-2 hover:bg-white/5 rounded" aria-label="Close">✕</button>
+    </header>
+    <div class="p-6 text-gray-200 leading-relaxed">
+      Central Valley, California, has faced a significant decline in rainfall between 2000 and 2024. 
+      This reduction threatens agriculture, water supply, and ecosystems, highlighting the urgent need 
+      for sustainable water management.
+    </div>
+  </div>
+</div>
+
+<script>
+/* ========= tiny helpers ========= */
+const qs  = (sel, root=document) => root.querySelector(sel);
+const qsa = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+/* ========= section switcher ========= */
+function showSectionId(id) {
+  const sections = ['home','story','map','chat','lab'];
+  sections.forEach(s => {
+    const el = qs('#'+s);
+    if (!el) return;
+    el.classList.add('hidden');
+    el.classList.remove('fade-in');
+  });
+  const target = qs('#'+id);
+  if (target) {
+    target.classList.remove('hidden');
+    target.classList.add('fade-in');
+  }
+  qsa('.nav-btn').forEach(btn => btn.classList.remove('neon-green'));
+  const activeBtn = qsa('.nav-btn').find(b => b.dataset.target === id);
+  if (activeBtn) activeBtn.classList.add('neon-green');
+}
+
+/* ========= NDVI + LST mini functions (همونی که قبلاً داشتی) ========= */
+function updateNdvi() {
+  const redEl = qs('#redInput'), nirEl = qs('#nirInput');
+  const valueEl = qs('#ndviValue'), labelEl = qs('#ndviLabel');
+  if (!redEl || !nirEl || !valueEl || !labelEl) return;
+  const red = parseFloat(redEl.value), nir = parseFloat(nirEl.value);
+  const ndvi = (nir - red) / (nir + red);
+  const clamped = isFinite(ndvi) ? Math.max(-1, Math.min(1, ndvi)) : 0;
+  valueEl.textContent = `NDVI = ${clamped.toFixed(2)}`;
+  const label = clamped > 0.6 ? 'Healthy vegetation'
+              : clamped > 0.3 ? 'Moderate health'
+              : clamped > 0   ? 'Sparse vegetation'
+              : 'Bare/Water/Urban';
+  labelEl.textContent = label;
+}
+function updatePlanckCurve(tempC) {
+  const cur = qs('#currentTemp'), path = qs('#planckPath');
+  if (cur) cur.textContent = `${tempC}°C`;
+  if (path) {
+    const intensity = Math.max(20, 100 - (tempC - 20) * 1.5);
+    path.setAttribute('d', `M10,${intensity} Q50,${intensity-20} 100,${intensity-30} Q150,${intensity-35} 200,${intensity-40} Q250,${intensity-42} 290,${intensity-45}`);
+  }
+}
+
+/* ========= energy balance mini (مودال) ========= */
+function drawEnergy() {
+  const canvas = qs('#energyCanvas'); if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const sm = qs('#soilMoisture'); if (!sm) return;
+  ctx.clearRect(0,0,640,140);
+  const soil = parseInt(sm.value, 10);
+
+  function arrow(x1,y1,x2,y2,color){
+    const head=10, ang=Math.atan2(y2-y1, x2-x1);
+    ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-head*Math.cos(ang-Math.PI/6), y2-head*Math.sin(ang-Math.PI/6));
+    ctx.lineTo(x2-head*Math.cos(ang+Math.PI/6), y2-head*Math.sin(ang+Math.PI/6));
+    ctx.closePath(); ctx.fill();
+  }
+  arrow(40, 20, 200, 60, '#fbbf24'); // SW in
+  arrow(440, 60, 600, 20, '#f97316'); // LW out
+  const L = 40 + soil * 0.5; arrow(320, 120, 320, 120 - L, '#60a5fa');
+  const H = 100 - soil * 0.5; arrow(260, 120, 260, 120 - H, '#ef4444');
+
+  ctx.fillStyle='#9ca3af'; ctx.font='12px sans-serif';
+  ctx.fillText('Sun (SW)', 40, 14);
+  ctx.fillText('Thermal (LW)', 555, 16);
+  ctx.fillText('Latent (evaporation)', 336, 40);
+  ctx.fillText('Sensible (heating air)', 176, 40);
+
+  const latent = qs('#latentLabel');
+  if (latent) latent.textContent = soil > 50 ? 'Latent ↑ (cooling surface)' : 'Latent ↓ (warming surface)';
+}
+
+/* ========= MAP overlay player ========= */
+function initMapPlayer() {
+  const START_YEAR = 2000, END_YEAR = 2024;
+  const DOY_BY_MONTH = [15,46,74,105,135,166,196,227,258,288,319,349];
+
+  const $year   = qs('#year');
+  const $month  = qs('#month');
+  const $frame  = qs('#precipFrame');
+  const $badge  = qs('#badge');
+  const $loader = qs('#loader');
+  const $opacity= qs('#opacity');
+  const $opacityVal = qs('#opacityVal');
+  const $playBtn= qs('#playBtn');
+  const $ySlider = document.getElementById('ySlider');
+  const $mSlider = document.getElementById('mSlider');
+  const $yLabel  = document.getElementById('yLabel');
+  const $mLabel  = document.getElementById('mLabel');
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+
+  if (!$year || !$month || !$frame) return; // اگر سکشن map هنوز رندر نشده
+
+  // fill years
+  for (let y = START_YEAR; y <= END_YEAR; y++) {
+    const opt = document.createElement('option');
+    opt.value = String(y); opt.textContent = y;
+    $year.appendChild(opt);
+  }
+  $year.value = START_YEAR; $month.value = '0';
+  if ($ySlider) { $ySlider.value = $year.value; }
+  if ($mSlider) { $mSlider.value = $month.value; }
+  if ($yLabel)  { $yLabel.textContent = `Year: ${$year.value}`; }
+  if ($mLabel)  { $mLabel.textContent = `Month: ${MONTHS[Number($month.value)]}`; }
+
+
+  const pad3 = n => n.toString().padStart(3,'0');
+  const path = (y, m) => `frames/DAYMET.004_prcp_doy${y}${pad3(DOY_BY_MONTH[m])}_aid0001.png`;
+  const showLoader = s => { if ($loader) $loader.classList.toggle('show', !!s); };
+
+  function updateFrame(){
+    showLoader(true);
+    const y = parseInt($year.value,10);
+    const m = parseInt($month.value,10);
+    const src = path(y, m);
+    const monthLabel = (qs(`#month option[value="${m}"]`) || {}).textContent || '';
+    const img = new Image();
+    img.onload = function(){
+      $frame.src = src;
+      if ($badge) $badge.textContent = `Precip • ${y} – ${monthLabel}`;
+      showLoader(false);
+      const next = (m+1) % 12, nextYear = m===11 ? y+1 : y;
+      if (nextYear <= END_YEAR) { new Image().src = path(nextYear, next); }
+    };
+    img.onerror = function(){
+      showLoader(false);
+      if ($badge) $badge.textContent = 'No image: ' + src.split('/').pop();
+    };
+    img.src = src;
+    if ($ySlider && String($ySlider.value) !== String($year.value)) $ySlider.value = $year.value;
+    if ($mSlider && String($mSlider.value) !== String($month.value)) $mSlider.value = $month.value;
+    if ($yLabel) $yLabel.textContent = `Year: ${$year.value}`;
+    if ($mLabel) $mLabel.textContent = `Month: ${MONTHS[Number($month.value)]}`;
+
+  }
+  function updateOpacity(){
+    if (!$opacity) return;
+    const v = Number($opacity.value)/100;
+    $frame.style.opacity = v.toFixed(2);
+    if ($opacityVal) $opacityVal.textContent = `${$opacity.value}%`;
+  }
+
+  let timer = null;
+  function togglePlay(){
+    const isPlaying = $playBtn && $playBtn.getAttribute('aria-pressed') === 'true';
+    if (isPlaying) {
+      clearInterval(timer); timer = null;
+      if ($playBtn){ $playBtn.setAttribute('aria-pressed','false'); $playBtn.textContent = '▶ Play'; }
+    } else {
+      const FPS = 3;
+      if ($playBtn){ $playBtn.setAttribute('aria-pressed','true'); $playBtn.textContent = '⏸ Pause'; }
+      timer = setInterval(() => {
+        let m = parseInt($month.value,10), y = parseInt($year.value,10);
+        m++; if (m > 11) { m = 0; y++; }
+        if (y > END_YEAR) { y = START_YEAR; }
+        $year.value = String(y); $month.value = String(m);
+        updateFrame();
+      }, 1000 / FPS);
+    }
+  }
+
+  $year.addEventListener('change', () => {
+    if ($ySlider) { $ySlider.value = $year.value; if ($yLabel) $yLabel.textContent = `Year: ${$year.value}`; }
+    updateFrame();
+  });
+  $month.addEventListener('change', () => {
+    if ($mSlider) { $mSlider.value = $month.value; if ($mLabel) $mLabel.textContent = `Month: ${MONTHS[Number($month.value)]}`; }
+    updateFrame();
+  });
+
+  if ($opacity) $opacity.addEventListener('input', updateOpacity);
+  if ($playBtn) $playBtn.addEventListener('click', togglePlay);
+  if ($ySlider) $ySlider.value = $year.value;
+if ($mSlider) $mSlider.value = $month.value;
+if ($yLabel)  $yLabel.textContent = `Year: ${$year.value}`;
+if ($mLabel)  $mLabel.textContent = `Month: ${MONTHS[Number($month.value)]}`;
+
+  updateOpacity();
+  updateFrame();
+  if ($ySlider) {
+  $ySlider.addEventListener('input', () => {
+    const y = parseInt($ySlider.value, 10);
+    $year.value = String(y);         // سینک با دراپ‌داون
+    if ($yLabel) $yLabel.textContent = `Year: ${y}`;
+    updateFrame();
+  });
+}
+if ($mSlider) {
+  $mSlider.addEventListener('input', () => {
+    const m = parseInt($mSlider.value, 10);
+    $month.value = String(m);        // سینک با دراپ‌داون
+    if ($mLabel) $mLabel.textContent = `Month: ${MONTHS[m]}`;
+    updateFrame();
+  });
+}
+
+}
+
+function initChat() {
+  const msgs    = document.querySelector('#chatMessages');
+  const input   = document.querySelector('#chatInput');
+  const sendBtn = document.querySelector('#sendBtn');
+
+  // match the Flask host/port above
+  const API_BASE = 'http://127.0.0.1:5055';
+
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, m=>({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+    }[m]));
+  }
+
+  function addMsg(html, role){
+    const wrap = document.createElement('div');
+    wrap.className='chat-message';
+    wrap.innerHTML = role==='user'
+      ? `<div class="flex items-start gap-3 justify-end">
+           <div class="flex-1 text-right"><p>${html}</p></div>
+           <div class="w-8 h-8 rounded-full bg-blue-500 grid place-items-center text-sm">👤</div>
+         </div>`
+      : `<div class="flex items-start gap-3">
+           <div class="w-8 h-8 rounded-full bg-green-500 grid place-items-center text-sm">🤖</div>
+           <div class="flex-1"><p>${html}</p></div>
+         </div>`;
+    msgs.appendChild(wrap);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  async function send(){
+    const text = (input.value || '').trim();
+    if (!text) return;
+    addMsg(escapeHtml(text), 'user');
+    input.value = '';
+
+    try {
+      const res = await fetch(`${API_BASE}/ask`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ question: text })
+      });
+      const data = await res.json();
+      addMsg(escapeHtml(data.answer || '—'), 'ai');
+    } catch (e) {
+      addMsg('Error: make sure the backend is running at ' + API_BASE, 'ai');
+    }
+  }
+
+  sendBtn && sendBtn.addEventListener('click', send);
+  input && input.addEventListener('keydown', e => { if (e.key==='Enter') send(); });
+}
+
+/* ========= DOM READY: bind everything (بدون ?. ) ========= */
+document.addEventListener('DOMContentLoaded', function () {
+  // nav buttons
+  qsa('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', function () {
+      showSectionId(this.dataset.target);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+  // home cards
+  qsa('#home [data-target]').forEach(card => {
+    card.addEventListener('click', function () {
+      showSectionId(this.dataset.target);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+  // continue story -> map
+  const cont = qs('#continueStory'); if (cont) cont.addEventListener('click', () => showSectionId('map'));
+
+  // init visuals / demos
+  const navFirst = qsa('.nav-btn')[0]; if (navFirst) navFirst.classList.add('neon-green');
+  updatePlanckCurve(42); updateNdvi(); drawEnergy();
+
+  // physics modal
+  const openP = qs('#openPhysics'), closeP = qs('#closePhysics'), modal = qs('#physicsModal'), soil = qs('#soilMoisture');
+  if (openP && modal) openP.addEventListener('click', () => { modal.classList.remove('hidden'); drawEnergy(); });
+  if (closeP && modal) closeP.addEventListener('click', () => modal.classList.add('hidden'));
+  if (modal) modal.addEventListener('click', e => { if (e.target === modal) modal.classList.add('hidden'); });
+  if (soil) soil.addEventListener('input', drawEnergy);
+
+  // map & chat
+  initMapPlayer();
+  initChat();
+
+  // show home by default
+  showSectionId('home');
+});
+// === Impact Modal ===
+const impactStep = qs('.stepper-item[data-step="impacts"]');
+const impactModal = qs('#impactModal');
+const closeImpact = qs('#closeImpact');
+
+if (impactStep && impactModal){
+  impactStep.addEventListener('click', () => {
+    impactModal.classList.remove('hidden');
+  });
+}
+if (closeImpact && impactModal){
+  closeImpact.addEventListener('click', () => {
+    impactModal.classList.add('hidden');
+  });
+}
+if (impactModal){
+  impactModal.addEventListener('click', e => {
+    if (e.target === impactModal) impactModal.classList.add('hidden');
+  });
+}
+(function () {
+  // عناصر UI
+  const $start = document.getElementById('gifStart');
+  const $end   = document.getElementById('gifEnd');
+  const $fps   = document.getElementById('gifFps');
+  const $btn   = document.getElementById('gifMakeBtn');
+  const $prog  = document.getElementById('gifProgress');
+  const $dl    = document.getElementById('gifDownload');
+
+  // تنظیم متن وضعیت
+  function setStatus(msg, show=true){
+    if (!$prog) return;
+    if (show) $prog.classList.remove('hidden'); else $prog.classList.add('hidden');
+    $prog.textContent = msg;
+  }
+
+  // اعتبارسنجی سادهٔ ورودی‌ها
+  function sanitizeInputs() {
+    let s = parseInt(($start?.value || '2000'), 10);
+    let e = parseInt(($end?.value   || '2005'), 10);
+    let f = parseInt(($fps?.value   || '6'),    10);
+
+    if (!Number.isFinite(s)) s = 2000;
+    if (!Number.isFinite(e)) e = s;
+    if (!Number.isFinite(f)) f = 6;
+
+    if (e < s) e = s;
+    f = Math.max(1, Math.min(30, f)); // محدود به 1..30
+
+    return { s, e, f };
+  }
+
+  // ساخت URL اندپوینت
+  function buildUrl(s, e, f) {
+    const qs = new URLSearchParams({ start: String(s), end: String(e), fps: String(f) });
+    return `/make_gif?${qs.toString()}`;
+  }
+
+  // دانلود Blob با ساختن لینک موقت
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    if ($dl){
+      $dl.href = url;
+      $dl.download = filename;
+      $dl.classList.remove('hidden');
+      // برای سازگاری: لینک را خودمان کلیک می‌کنیم تا دانلود شروع شود
+      $dl.click();
+    } else {
+      // fallback اگر عنصر دانلود نداریم
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    // URL بعد از چند ثانیه آزاد شود
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
+  // fetch با تایم‌اوت
+  async function fetchWithTimeout(url, ms=120000) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort('timeout'), ms);
+    try {
+      return await fetch(url, { method: 'GET', signal: ctrl.signal });
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  async function onGenerate() {
+    if (!$btn) return;
+    const { s, e, f } = sanitizeInputs();
+
+    // آماده‌سازی UI
+    setStatus('Generating on server…');
+    if ($dl) { $dl.classList.add('hidden'); $dl.removeAttribute('href'); }
+    $btn.disabled = true;
+    $btn.classList.add('opacity-60', 'cursor-not-allowed');
+
+    try {
+      const url = buildUrl(s, e, f);
+      const res = await fetchWithTimeout(url, 5 * 60 * 1000); // حداکثر 5 دقیقه
+
+      if (!res.ok) {
+        // اگر سرور متن خطا برگرداند
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `Server error (${res.status})`);
+      }
+
+      // انتظار: image/gif به‌صورت attachment
+      const blob = await res.blob();
+      if (blob.type && !blob.type.includes('gif')) {
+        // اگر به هر دلیل mimetype متفاوت بود ولی فایل معتبر است، ادامه می‌دهیم
+        console.warn('Unexpected mime type:', blob.type);
+      }
+
+      const fname = `timelapse_${s}_${e}.gif`;
+      downloadBlob(blob, fname);
+      setStatus(`Done! Download should start automatically.`, true);
+    } catch (err) {
+      console.error(err);
+      setStatus(`Failed: ${err && err.message ? err.message : 'Unknown error'}`, true);
+    } finally {
+      $btn.disabled = false;
+      $btn.classList.remove('opacity-60', 'cursor-not-allowed');
+    }
+  }
+
+  if ($btn) {
+    $btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      onGenerate();
+    });
+  }
+
+  // تجربهٔ بهتر: با Enter هم اجرا شود
+  [$start, $end, $fps].forEach(el => {
+    if (!el) return;
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        onGenerate();
+      }
+    });
+  });
+
+})();
+
+document.addEventListener('DOMContentLoaded', function () {
+  const futureStep = document.querySelector('.stepper-item[data-step="future"]');
+  if (futureStep) {
+    // اجازه کلیک بدیم
+    futureStep.removeAttribute('aria-disabled');
+    futureStep.classList.remove('opacity-50', 'pointer-events-none');
+
+    // رویداد کلیک → باز شدن لینک
+    futureStep.addEventListener('click', () => {
+      window.location.href = 'http://127.0.0.1:5055/';
+    });
+  }
+});
+
+
+</script>
+<script src="https://unpkg.com/gif.js.optimized/dist/gif.min.js"></script>
+</body>
+</html>
